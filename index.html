@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>블루마블 게임</title>
+    <style>
+        .player-piece {
+            position: fixed;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            transition: all 0.5s ease;
+            z-index: 1002;
+        }
+        #currentLocation {
+            position: fixed;
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            background: white;
+            padding: 15px;
+            font-size: 20px;
+            font-weight: bold;
+            border-radius: 0 0 10px 10px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            z-index: 1000;
+        }
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        #gameContainer {
+            display: flex;
+            width: 100%;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 20px;
+        }
+        .left-panel {
+            position: sticky;
+            top: 20px;
+            left: 0;
+            padding: 20px;
+            background: white;
+            height: fit-content;
+        }
+        #playerInfo, #diceResult {
+            width: 200px;
+            padding: 10px;
+            border: 1px solid #ccc;
+            text-align: left;
+            margin-bottom: 10px;
+        }
+        #boardImage {
+            position: fixed;
+            right: 20%;
+            top: 50%;
+            transform: translateY(-50%);
+            max-width: 35%;
+            height: auto;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            width: 100%;
+            margin: 5px 0;
+        }
+        .dice-button {
+            position: fixed;
+            right: 20px;
+            top: 20px;
+            width: auto;
+        }
+        .button-container {
+            position: fixed;
+            right: 20px;
+            top: 70px;
+            display: flex;
+            flex-direction: column;
+        }
+        #modal {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.3);
+            z-index: 1001;
+        }
+        .overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+        }
+    </style>
+</head>
+<body>
+    <div id="currentLocation">
+        현재 지역: <span id="location">출발</span>
+    </div>
+    <div id="gameContainer">
+        <div class="left-panel">
+            <div id="playerInfo">
+                <h3>플레이어 정보</h3>
+                <div id="playersList"></div>
+            </div>
+            <div id="diceResult">
+                <h3>주사위 결과</h3>
+                <p>주사위 1: <span id="dice1">-</span></p>
+                <p>주사위 2: <span id="dice2">-</span></p>
+                <p>합계: <span id="diceSum">-</span></p>
+            </div>
+        </div>
+        <div class="button-container">
+            <button class="dice-button" onclick="rollDice()">주사위 굴리기</button>
+            <button onclick="initializeGame()">게임 초기화</button>
+        </div>
+        <img id="boardImage" src="e5ab9fb6-ad48-404e-bd62-9bf921a29a72.webp" alt="게임보드">
+    </div>
+
+    <div class="overlay" id="overlay"></div>
+    <div id="modal">
+        <div id="modalContent"></div>
+    </div>
+
+    <script>
+        const cityNames = ['출발','타이베이','황금열쇠','홍콩','마닐라','제주도','싱가포르','황금열쇠','카이로','이스탄불','무인도','아테네','황금열쇠','코펜하겐','스톡홀롬','콩고드여객기','취리히','황금열쇠','베를린','몬트리올','사회복지기금','부에노스아이레스','황금열쇠','상파울루','시드니','부산','하와이','리스본','퀸엘라자베스호','마드리드','우주여행','도쿄','콜롬비아호','파리','로마','황금열쇠','런던','뉴욕','사회복지기금추가','서울올림픽'];
+        const cityPrices = {
+            '타이베이': 50000, '홍콩': 80000, '마닐라': 80000, '제주도': 100000,
+            '싱가포르': 100000, '카이로': 120000, '이스탄불': 120000, '아테네': 140000,
+            '코펜하겐': 160000, '스톡홀롬': 160000, '콩고드여객기': 200000, '취리히': 180000,
+            '베를린': 180000, '몬트리올': 200000, '부에노스아이레스': 220000, '상파울루': 220000,
+            '시드니': 240000, '부산': 260000, '하와이': 260000, '리스본': 280000,
+            '마드리드': 280000, '도쿄': 300000, '파리': 320000, '로마': 320000,
+            '런던': 350000, '뉴욕': 350000, '서울올림픽': 400000
+        };
+
+        let players = [];
+        let currentPlayerIndex = 0;
+        let currentPlayer = null;
+        let welfareFund = 0;
+        let prisonTurns = {};
+
+        function showModal(content) {
+            document.getElementById('modalContent').innerHTML = content;
+            document.getElementById('modal').style.display = 'block';
+            document.getElementById('overlay').style.display = 'block';
+        }
+
+        function hideModal() {
+            document.getElementById('modal').style.display = 'none';
+            document.getElementById('overlay').style.display = 'none';
+        }
+
+        function initializeGame() {
+            const playerCount = prompt("몇 명이서 플레이하시겠습니까? (2-4명)");
+            if (playerCount === null) return;
+
+            const count = parseInt(playerCount);
+            if (count < 2 || count > 4) {
+                alert("2-4명의 플레이어가 필요합니다.");
+                initializeGame();
+                return;
+            }
+
+            // Remove existing player pieces
+            document.querySelectorAll('.player-piece').forEach(piece => piece.remove());
+
+            const colors = ['blue', 'red', 'yellow', 'green'];
+            players = [];
+            welfareFund = 0;
+            for (let i = 0; i < count; i++) {
+                const name = prompt(`플레이어 ${i + 1}의 이름을 입력하세요:`);
+                const player = {
+                    name: name || `플레이어 ${i + 1}`,
+                    money: 2000000,
+                    position: 0,
+                    properties: [],
+                    color: colors[i]
+                };
+                
+                // Create player piece
+                const piece = document.createElement('div');
+                piece.className = 'player-piece';
+                piece.id = `player-${i}`;
+                piece.style.backgroundColor = colors[i];
+                // Position piece relative to the e5a image
+                const boardImage = document.getElementById('boardImage');
+                const rect = boardImage.getBoundingClientRect();
+                piece.style.right = `${rect.right - rect.left - 20}px`;
+                piece.style.bottom = `${20}px`;
+                document.body.appendChild(piece);
+                
+                players.push(player);
+            }
+
+            currentPlayerIndex = 0;
+            currentPlayer = players[0];
+            updatePlayerInfo();
+            document.getElementById('location').textContent = cityNames[0];
+            welfareFund = 0;
+            prisonTurns = {};
+        }
+
+        function updatePlayerInfo() {
+            const playersList = document.getElementById('playersList');
+            playersList.innerHTML = players.map((player, index) => {
+                const buildingInfo = player.buildings ? 
+                    Object.entries(player.buildings)
+                        .map(([city, type]) => `${city}(${buildings[type].name})`)
+                        .join(', ') : '';
+
+                return `
+                    <div style="margin-bottom: 10px; ${index === currentPlayerIndex ? 'font-weight: bold;' : ''}">
+                        <p>${player.name}</p>
+                        <p>보유 금액: ${player.money}원</p>
+                        <p>소유지: ${player.properties.join(', ') || '없음'}</p>
+                        <p>건물: ${buildingInfo || '없음'}</p>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function canBuyProperty(cityName) {
+            return !['황금열쇠', '사회복지기금', '무인도', '사회복지기금추가', '우주여행', '출발'].includes(cityName);
+        }
+
+        function handlePropertyPurchase(cityName) {
+            const price = cityPrices[cityName];
+            if (currentPlayer.money >= price) {
+                currentPlayer.money -= price;
+                currentPlayer.properties.push(cityName);
+                alert(`${cityName}을(를) ${price}원에 구매했습니다!`);
+            } else if (currentPlayer.properties.length > 0) {
+                const sellProperty = confirm('돈이 부족합니다. 소유지를 판매하시겠습니까?');
+                if (sellProperty) {
+                    const propertyToSell = prompt(`판매할 소유지를 선택하세요: ${currentPlayer.properties.join(', ')}`);
+                    if (currentPlayer.properties.includes(propertyToSell)) {
+                        const sellPrice = cityPrices[propertyToSell];
+                        currentPlayer.money += sellPrice;
+                        currentPlayer.properties = currentPlayer.properties.filter(p => p !== propertyToSell);
+                        handlePropertyPurchase(cityName);
+                    }
+                }
+            } else {
+                alert('돈이 부족하고 판매할 소유지가 없습니다.');
+            }
+            updatePlayerInfo();
+        }
+
+        function nextPlayer() {
+            currentPlayerIndex = (currentPlayerIndex + 1) % players.length;
+            currentPlayer = players[currentPlayerIndex];
+            updatePlayerInfo();
+        }
+
+        const buildings = {
+            hut: { name: '초가집', priceFactor: 0.5 },
+            building: { name: '빌딩', priceFactor: 1.0 },
+            hotel: { name: '호텔', priceFactor: 2.0 }
+        };
+
+        function getBuildingPrice(cityPrice, buildingType) {
+            return cityPrice * buildings[buildingType].priceFactor;
+        }
+
+        function handleBuildingPurchase(cityName, buildingType) {
+            const buildingPrice = getBuildingPrice(cityPrices[cityName], buildingType);
+
+            if (currentPlayer.money >= buildingPrice) {
+                currentPlayer.money -= buildingPrice;
+                if (!currentPlayer.buildings) currentPlayer.buildings = {};
+                currentPlayer.buildings[cityName] = buildingType;
+                alert(`${cityName}에 ${buildings[buildingType].name}을(를) 건설했습니다!`);
+                return true;
+            }
+            return false;
+        }
+
+        function payRent(owner, cityName) {
+            const baseRent = cityPrices[cityName] * 2;
+            let totalRent = baseRent;
+
+            if (owner.buildings && owner.buildings[cityName]) {
+                const buildingType = owner.buildings[cityName];
+                totalRent += getBuildingPrice(cityPrices[cityName], buildingType);
+            }
+
+            if (currentPlayer.money >= totalRent) {
+                currentPlayer.money -= totalRent;
+                owner.money += totalRent;
+                alert(`${owner.name}에게 통행료 ${totalRent}원을 지불했습니다.`);
+                return true;
+            }
+            return false;
+        }
+
+        function sellProperty() {
+            if (currentPlayer.properties.length === 0) {
+                alert('판매할 소유지가 없습니다.');
+                return false;
+            }
+
+            const propertyToSell = prompt(`판매할 소유지를 선택하세요: ${currentPlayer.properties.join(', ')}`);
+            if (currentPlayer.properties.includes(propertyToSell)) {
+                const sellPrice = cityPrices[propertyToSell];
+                currentPlayer.money += sellPrice;
+                currentPlayer.properties = currentPlayer.properties.filter(p => p !== propertyToSell);
+                if (currentPlayer.buildings && currentPlayer.buildings[propertyToSell]) {
+                    delete currentPlayer.buildings[propertyToSell];
+                }
+                return true;
+            }
+            return false;
+        }
+
+        function bankruptcy() {
+            alert(`${currentPlayer.name}이(가) 파산했습니다!`);
+            players = players.filter((p, i) => i !== currentPlayerIndex);
+            if (currentPlayerIndex >= players.length) {
+                currentPlayerIndex = 0;
+            }
+            currentPlayer = players[currentPlayerIndex];
+
+            if (players.length === 1) {
+                alert(`${players[0].name}이(가) 승리했습니다!`);
+                initializeGame();
+            }
+        }
+
+        function rollDice() {
+            if (players.length === 0) {
+                alert('게임을 먼저 초기화해주세요!');
+                return;
+            }
+
+            const dice1 = Math.floor(Math.random() * 6) + 1;
+            const dice2 = Math.floor(Math.random() * 6) + 1;
+            const sum = dice1 + dice2;
+
+            document.getElementById('dice1').textContent = dice1;
+            document.getElementById('dice2').textContent = dice2;
+            document.getElementById('diceSum').textContent = sum;
+
+            const oldPosition = currentPlayer.position;
+            currentPlayer.position = (currentPlayer.position + sum) % 40;
+            const currentCity = cityNames[currentPlayer.position];
+            document.getElementById('location').textContent = currentCity;
+
+            if (currentPlayer.position < oldPosition) {
+                currentPlayer.money += 200000;
+                alert('출발지를 통과했습니다! 월급 20만원이 지급됩니다.');
+            }
+
+            if (currentCity === '무인도') {
+                if (dice1 === dice2) {
+                    alert('더블이 나왔습니다! 무인도를 벗어났습니다!');
+                    nextPlayer();
+                } else {
+                    if (!prisonTurns[currentPlayer.name]) {
+                        prisonTurns[currentPlayer.name] = 1;
+                    }
+                    alert(`${currentPlayer.name}은 무인도에 ${prisonTurns[currentPlayer.name]}턴 동안 갇힙니다.`);
+                    prisonTurns[currentPlayer.name]++;
+                    nextPlayer();
+                }
+
+            } else if (currentCity === '사회복지기금추가') {
+                const addAmount = 150000;
+                if (currentPlayer.money >= addAmount) {
+                    currentPlayer.money -= addAmount;
+                    welfareFund += addAmount;
+                    alert('사회복지기금에 15만원을 추가했습니다!');
+                } else if (currentPlayer.properties.length > 0) {
+                    alert('돈이 부족하여 소유지를 팔아야 합니다.');
+                    //Sell property logic (similar to handlePropertyPurchase, but for forced sale)
+                    const propertyToSell = prompt(`판매할 소유지를 선택하세요: ${currentPlayer.properties.join(', ')}`);
+                    if (currentPlayer.properties.includes(propertyToSell)) {
+                      const sellPrice = cityPrices[propertyToSell];
+                      currentPlayer.money += sellPrice;
+                      currentPlayer.properties = currentPlayer.properties.filter(p => p !== propertyToSell);
+                      //Check if enough money after selling
+                      if(currentPlayer.money >= addAmount){
+                        currentPlayer.money -= addAmount;
+                        welfareFund += addAmount;
+                        alert('사회복지기금에 15만원을 추가했습니다!');
+                      } else {
+                        alert('소유지를 팔아도 돈이 부족합니다. 파산합니다.');
+                        bankruptcy();
+                      }
+                    }
+                } else {
+                    alert('돈이 부족하고 판매할 소유지가 없습니다. 파산합니다.');
+                    bankruptcy();
+                }
+
+                nextPlayer();
+
+            } else if (currentCity === '우주여행') {
+                const destination = prompt(`어디로 이동하시겠습니까? (도시 이름을 입력하세요)\n사용 가능한 도시:\n${cityNames.join(', ')}`);
+                if (cityNames.includes(destination)) {
+                    currentPlayer.position = cityNames.indexOf(destination);
+                    alert(`${destination}으로 이동합니다!`);
+                    document.getElementById('location').textContent = destination;
+                } else {
+                    alert('잘못된 도시 이름입니다. 현재 위치에 머뭅니다.');
+                }
+                nextPlayer();
+            } else if (currentCity === '사회복지기금') {
+                currentPlayer.money += welfareFund;
+                welfareFund = 0;
+                alert(`사회복지기금 ${currentPlayer.money}원을 받았습니다!`);
+                nextPlayer();
+
+            } else if (canBuyProperty(currentCity)) {
+                const owner = players.find(p => p.properties.includes(currentCity));
+
+                if (owner) {
+                    if (owner === currentPlayer) {
+                        const buildContent = `
+                            <h3>${currentCity}에 건물을 건설하시겠습니까?</h3>
+                            <button onclick="handleBuildingSelection('${currentCity}'); hideModal();">1. 건설하기</button>
+                            <button onclick="hideModal(); nextPlayer();">2. 다음 플레이어로</button>
+                        `;
+                        showModal(buildContent);
+                    } else {
+                        if (!payRent(owner, currentCity)) {
+                            if (!sellProperty()) {
+                                bankruptcy();
+                            } else {
+                                payRent(owner, currentCity);
+                            }
+                        }
+                        nextPlayer();
+                    }
+                } else {
+                    const content = `
+                        <h3>${currentPlayer.name}님 ${currentCity}을(를) 구매하시겠습니까?</h3>
+                        <p>가격: ${cityPrices[currentCity]}원</p>
+                        <button onclick="handlePropertyPurchase('${currentCity}'); hideModal(); nextPlayer();">1. 구매하기</button>
+                        <button onclick="hideModal(); nextPlayer();">2. 다음 플레이어로</button>
+                    `;
+                    showModal(content);
+                }
+            } else {
+                nextPlayer();
+            }
+
+            updatePlayerInfo();
+        }
+
+        function handleBuildingSelection(cityName) {
+            const cityPrice = cityPrices[cityName];
+            const buildingType = prompt(
+                `어떤 건물을 건설하시겠습니까?\n` +
+                `1: 초가집 (${cityPrice * 0.5}원)\n` +
+                `2: 빌딩 (${cityPrice}원)\n` +
+                `3: 호텔 (${cityPrice * 2}원)`
+            );
+            let selectedBuilding;
+
+            switch(buildingType) {
+                case '1': selectedBuilding = 'hut'; break;
+                case '2': selectedBuilding = 'building'; break;
+                case '3': selectedBuilding = 'hotel'; break;
+                default: 
+                    alert('잘못된 선택입니다.');
+                    nextPlayer();
+                    return;
+            }
+
+            if (!handleBuildingPurchase(cityName, selectedBuilding)) {
+                if (!sellProperty()) {
+                    alert('건물을 건설할 수 없습니다.');
+                } else {
+                    handleBuildingPurchase(cityName, selectedBuilding);
+                }
+            }
+            nextPlayer();
+        }
+
+        initializeGame();
+
+    </script>
+</body>
+</html>
